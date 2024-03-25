@@ -15,16 +15,16 @@ endif
 all: fmt build start
 
 build:
-	go build -o vault/plugins/grafana-cloud.exe cmd/grafana-cloud/main.go
+	go build -o vault/plugins/grafana-cloud cmd/grafana-cloud/main.go
 
 start:
 	vault server -dev -dev-root-token-id=root -dev-plugin-dir=./vault/plugins
 
 enable:
-	vault secrets enable -path=grafana-cloud grafana-cloud.exe
+	vault secrets enable -path=grafana-cloud grafana-cloud
 
 clean:
-	rm -f ./vault/plugins/grafana-cloud.exe
+	rm -f ./vault/plugins/grafana-cloud
 
 fmt:
 	go fmt $$(go list ./...)

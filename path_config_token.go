@@ -2,35 +2,12 @@ package grafanacloud
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"strings"
 
-	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
 )
-
-type GrafanaToken struct {
-	K  string `json:"k"`
-	N  string `json:"n"`
-	ID int    `json:"id"`
-}
-
-func decodeToken(token string) (GrafanaToken, error) {
-	decodedToken, err := base64.StdEncoding.DecodeString(token)
-	if err != nil {
-		return GrafanaToken{}, err
-	}
-
-	var grafanaToken GrafanaToken
-	if err := json.Unmarshal(decodedToken, &grafanaToken); err != nil {
-		return GrafanaToken{}, err
-	}
-
-	return grafanaToken, nil
-}
 
 const configTokenKey = "config/token"
 
@@ -38,13 +15,9 @@ func pathConfigToken(b *backend) *framework.Path {
 	return &framework.Path{
 		Pattern: "config/token",
 		Fields: map[string]*framework.FieldSchema{
-			"token": &framework.FieldSchema{
+			"token": {
 				Type:        framework.TypeString,
 				Description: "Token for API calls",
-			},
-			"orgSlug": &framework.FieldSchema{
-				Type:        framework.TypeString,
-				Description: "Organization Slug the API token belongs to",
 			},
 		},
 
@@ -79,7 +52,7 @@ func (b *backend) readConfigToken(ctx context.Context, storage logical.Storage) 
 
 	conf := &accessTokenConfig{}
 	if err := entry.DecodeJSON(conf); err != nil {
-		return nil, errwrap.Wrapf("error reading nomad access configuration: {{err}}", err)
+		return nil, fmt.Errorf("error reading nomad access configuration: %w", err)
 	}
 
 	return conf, nil
@@ -96,8 +69,9 @@ func (b *backend) pathConfigTokenRead(ctx context.Context, req *logical.Request,
 
 	return &logical.Response{
 		Data: map[string]interface{}{
-			"token":   conf.Token,
-			"orgSlug": conf.OrganizationSlug,
+			"token":          conf.Token,
+			"id":             conf.TokenID,
+			"accessPolicyID": conf.AccessPolicyID,
 		},
 	}, nil
 }
@@ -118,22 +92,26 @@ func (b *backend) pathConfigTokenWrite(ctx context.Context, req *logical.Request
 	} else {
 		conf.Token = token.(string)
 	}
-
-	orgSlug, ok := data.GetOk("orgSlug")
-	if !ok {
-		missingOptions = append(missingOptions, "orgSlug")
-	} else {
-		conf.OrganizationSlug = orgSlug.(string)
-	}
-
 	if len(missingOptions) > 0 {
 		return logical.ErrorResponse("Missing %s in configuration request", strings.Join(missingOptions, ",")), nil
 	}
 
-	decodedToken, err := decodeToken(conf.Token)
+	client, err := createClient(conf.Token)
 	if err != nil {
-		return logical.ErrorResponse("failed to decoded token (%s). please check that token is valid", conf.Token), nil
+		return logical.ErrorResponse(fmt.Sprintf("failed to create client: %s", err)), nil
 	}
+
+	decodedToken, err := DecodeToken(conf.Token)
+	if err != nil {
+		return logical.ErrorResponse(fmt.Sprintf("failed to decode token: %s", err)), nil
+	}
+
+	resp, err := client.GetTokenByName(decodedToken.TokenName)
+	if err != nil {
+		return logical.ErrorResponse(fmt.Sprintf("failed to get token: %s", err)), nil
+	}
+	conf.AccessPolicyID = resp.AccessPolicyID
+	conf.TokenID = resp.ID
 
 	entry, err := logical.StorageEntryJSON(configTokenKey, conf)
 	if err != nil {
@@ -143,29 +121,7 @@ func (b *backend) pathConfigTokenWrite(ctx context.Context, req *logical.Request
 		return nil, err
 	}
 
-	client, err := b.client(ctx, req.Storage)
-	if err != nil {
-		req.Storage.Delete(ctx, configTokenKey)
-		return nil, err
-	}
-
-	tokenName := decodedToken.N
-	foundToken, err := client.findToken(tokenName)
-	if err != nil {
-		req.Storage.Delete(ctx, configTokenKey)
-		s, ok := err.(GrafanaAPIError)
-		if ok {
-			return logical.ErrorResponse(fmt.Sprintf("err while listing token from grafana cloud. code: %s, err: %s", s.Code, s.Message)), nil
-		}
-		return nil, err
-	}
-
-	if foundToken != nil && foundToken.Role == adminSlug {
-		return nil, nil
-	}
-
-	req.Storage.Delete(ctx, configTokenKey)
-	return logical.ErrorResponse(fmt.Sprintf("Could not find token '%s' with permission '%s' in Grafana Cloud", tokenName, adminSlug)), nil
+	return nil, nil
 }
 
 func (b *backend) pathConfigTokenDelete(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -176,8 +132,9 @@ func (b *backend) pathConfigTokenDelete(ctx context.Context, req *logical.Reques
 }
 
 type accessTokenConfig struct {
-	Token            string `json:"token"`
-	OrganizationSlug string `json:"orgSlug"`
+	TokenID        string `json:"id"`
+	Token          string `json:"token"`
+	AccessPolicyID string `json:"access_policy_id"`
 }
 
 const pathConfigTokenHelpSyn = `
