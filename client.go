@@ -198,6 +198,10 @@ func (c *Client) GetToken(id string) (*TokenResponse, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+
 	var jsonResponse TokenResponse
 	err = json.NewDecoder(resp.Body).Decode(&jsonResponse)
 	if err != nil {
