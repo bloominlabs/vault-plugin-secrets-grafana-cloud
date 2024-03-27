@@ -3,6 +3,7 @@ package grafanacloud
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
@@ -14,11 +15,11 @@ const maxTokenNameLength = 256
 
 func pathCredCreate(b *backend) *framework.Path {
 	return &framework.Path{
-		Pattern: "creds/" + framework.GenericNameRegex("role"),
+		Pattern: "creds/" + framework.GenericNameRegex("name"),
 		Fields: map[string]*framework.FieldSchema{
-			"role": &framework.FieldSchema{
+			"name": &framework.FieldSchema{
 				Type:        framework.TypeString,
-				Description: "Permission level of API key. One of 'Viewer', 'Editor', 'Admin', or 'MetricsPublisher'",
+				Description: "Name of the access policy to generate a key for",
 			},
 		},
 
@@ -29,7 +30,7 @@ func pathCredCreate(b *backend) *framework.Path {
 }
 
 func (b *backend) pathCredRead(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
-	role := d.Get("role").(string)
+	name := d.Get("name").(string)
 
 	// Get the http client
 	c, err := b.client(ctx, req.Storage)
@@ -45,27 +46,47 @@ func (b *backend) pathCredRead(ctx context.Context, req *logical.Request, d *fra
 		lease = &configLease{}
 	}
 
-	// Create it
-	b.Logger().Info(fmt.Sprintf("creating grafana-cloud token (role: %s)...", role))
-	token, err := c.CreateToken(createTokenName(role), role)
+	policy, err := b.accessPoliciesRead(ctx, req.Storage, name)
 	if err != nil {
-		s, ok := err.(GrafanaAPIError)
-		if ok {
-			return logical.ErrorResponse(fmt.Sprintf("err while creating token with role '%s' from grafana cloud. code: %s, err: %s", role, s.Code, s.Message)), nil
-		}
-		return nil, err
+		return logical.ErrorResponse(fmt.Sprintf("failed to read access policy '%s': %s", name, err)), nil
+	}
+	if policy == nil {
+		return logical.ErrorResponse(fmt.Sprintf("did not file access policy '%s'", name)), nil
+	}
+
+	ttl, _, err := framework.CalculateTTL(b.System(), 0, lease.TTL, 0, lease.MaxTTL, 0, time.Time{})
+	if err != nil {
+		return logical.ErrorResponse("failed to calculate ttl. err: %w", err), nil
+	}
+
+	// Create it
+	b.Logger().Info(fmt.Sprintf("creating grafana-cloud token (policy: %s)...", name))
+	tokenName := createTokenName(name)
+	token, err := c.CreateToken(CreateTokenRequest{
+		AccessPolicyID: policy.Policy.ID,
+		Name:           tokenName,
+		DisplayName:    tokenName,
+		ExpiresAt:      time.Now().UTC().Add(ttl),
+	})
+	if err != nil {
+		return logical.ErrorResponse(fmt.Sprintf("err while creating token with role '%s' from grafana cloud. err: %s", name, err)), nil
 	}
 
 	// Use the helper to create the secret
 	resp := b.Secret(SecretTokenType).Response(map[string]interface{}{
-		"token": token.Token,
-		"name":  token.Name,
+		"id":               token.ID,
+		"access_policy_id": token.AccessPolicyID,
+		"token":            token.Token,
+		"name":             token.Name,
 	}, map[string]interface{}{
-		"token": token.Token,
-		"name":  token.Name,
+		"id":               token.ID,
+		"access_policy_id": token.AccessPolicyID,
+		"token":            token.Token,
+		"name":             token.Name,
 	})
-	resp.Secret.TTL = lease.TTL
+	resp.Secret.TTL = ttl
 	resp.Secret.MaxTTL = lease.MaxTTL
+	resp.Secret.Renewable = false
 
 	return resp, nil
 }

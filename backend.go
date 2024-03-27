@@ -59,9 +59,11 @@ func (b *backend) paths() []*framework.Path {
 		pathCredCreate(b),
 		pathConfigRotateRoot(b),
 		pathConfigLease(b),
+		pathListAccessPolicies(b),
+		pathAccessPolicies(b),
 	}
 }
 
 const mockHelp = `
-	The Mock backend is a dummy secrets backend that stores kv pairs in a map.
+	Generates grafana cloud access tokens using access policies.
 `
