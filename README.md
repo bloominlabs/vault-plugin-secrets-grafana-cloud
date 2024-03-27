@@ -12,10 +12,7 @@ revocation of [Grafana Cloud](https://grafana.com/docs/grafana-cloud/developer-r
 2. Configure the plugin
 
    ```
-   vault write grafana-cloud/config/token \
-      access_policy_id=$GRAFANA_CLOUD_ACCESS_POLICY_ID \
-      token=$GRAFANA_CLOUD_TOKEN \
-      id=$GRAFANA_CLOUD_TOKEN_ID
+   vault write grafana-cloud/config/token token=$GRAFANA_CLOUD_TOKEN 
    ```
 
 3. Add one or more policies

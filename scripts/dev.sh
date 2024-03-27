@@ -3,7 +3,7 @@ set -eEuo pipefail
 
 MNT_PATH="grafana-cloud"
 PLUGIN_NAME="vault-plugin-secrets-grafana-cloud"
-
+GRAFANA_CLOUD_TOKEN="UPDATE_ME"
 
 #
 # Helper script for local development. Automatically builds and registers the
@@ -46,8 +46,7 @@ VAULT_PID=$!
 echo "    Mouting plugin"
 vault secrets enable -path=${MNT_PATH} -plugin-name=${PLUGIN_NAME} plugin
 
-vault write grafana-cloud/config/token \
-  id=$GRAFANA_CLOUD_TOKEN_ID
+vault write grafana-cloud/config/token token=$GRAFANA_CLOUD_TOKEN_ID
 
 vault write /grafana-cloud/access_policies/stack-readers policy=-<<EOF
 {
