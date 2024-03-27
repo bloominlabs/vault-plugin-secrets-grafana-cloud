@@ -51,6 +51,10 @@ func testCreateClient(t *testing.T, token string) (*Client, string) {
 func TestBackend_config_token(t *testing.T) {
 	GRAFANA_TOKEN := os.Getenv("TEST_GRAFANA_TOKEN")
 
+	if GRAFANA_TOKEN == "" {
+		t.Skip("no grafana token specified")
+	}
+
 	config := logical.TestBackendConfig()
 	config.StorageView = &logical.InmemStorage{}
 	b, err := Factory(context.Background(), config)
