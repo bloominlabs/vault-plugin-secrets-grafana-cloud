@@ -3,7 +3,7 @@ module github.com/bloominlabs/vault-plugin-secrets-grafana-cloud
 go 1.22
 
 require (
-	github.com/hashicorp/go-hclog v1.6.2
+	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/vault/api v1.12.2
 	github.com/hashicorp/vault/sdk v0.12.0
 	github.com/stretchr/testify v1.9.0
