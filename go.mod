@@ -7,7 +7,7 @@ toolchain go1.24.1
 require (
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/vault/api v1.16.0
-	github.com/hashicorp/vault/sdk v0.16.0
+	github.com/hashicorp/vault/sdk v0.17.0
 	github.com/stretchr/testify v1.10.0
 )
 
